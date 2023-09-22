@@ -7,7 +7,6 @@ Name | Type | Description | Notes
 **Type** | **string** |  | 
 **Message** | **string** |  | 
 **Time** | Pointer to **NullableString** |  | [optional] 
-**Subject** | Pointer to **NullableString** |  | [optional] 
 **TargetOrgs** | Pointer to **[]string** |  | [optional] 
 **RequiredScopes** | Pointer to **[]string** |  | [optional] 
 
@@ -105,41 +104,6 @@ HasTime returns a boolean if a field has been set.
 `func (o *PublishRequestData) UnsetTime()`
 
 UnsetTime ensures that no value is present for Time, not even an explicit nil
-### GetSubject
-
-`func (o *PublishRequestData) GetSubject() string`
-
-GetSubject returns the Subject field if non-nil, zero value otherwise.
-
-### GetSubjectOk
-
-`func (o *PublishRequestData) GetSubjectOk() (*string, bool)`
-
-GetSubjectOk returns a tuple with the Subject field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetSubject
-
-`func (o *PublishRequestData) SetSubject(v string)`
-
-SetSubject sets Subject field to given value.
-
-### HasSubject
-
-`func (o *PublishRequestData) HasSubject() bool`
-
-HasSubject returns a boolean if a field has been set.
-
-### SetSubjectNil
-
-`func (o *PublishRequestData) SetSubjectNil(b bool)`
-
- SetSubjectNil sets the value for Subject to be an explicit nil
-
-### UnsetSubject
-`func (o *PublishRequestData) UnsetSubject()`
-
-UnsetSubject ensures that no value is present for Subject, not even an explicit nil
 ### GetTargetOrgs
 
 `func (o *PublishRequestData) GetTargetOrgs() []string`

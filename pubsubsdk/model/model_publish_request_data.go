@@ -19,7 +19,6 @@ type PublishRequestData struct {
 	Type string `json:"type"`
 	Message string `json:"message"`
 	Time NullableString `json:"time,omitempty"`
-	Subject NullableString `json:"subject,omitempty"`
 	TargetOrgs []string `json:"targetOrgs,omitempty"`
 	RequiredScopes []string `json:"requiredScopes,omitempty"`
 }
@@ -133,48 +132,6 @@ func (o *PublishRequestData) UnsetTime() {
 	o.Time.Unset()
 }
 
-// GetSubject returns the Subject field value if set, zero value otherwise (both if not set or set to explicit null).
-func (o *PublishRequestData) GetSubject() string {
-	if o == nil || o.Subject.Get() == nil {
-		var ret string
-		return ret
-	}
-	return *o.Subject.Get()
-}
-
-// GetSubjectOk returns a tuple with the Subject field value if set, nil otherwise
-// and a boolean to check if the value has been set.
-// NOTE: If the value is an explicit nil, `nil, true` will be returned
-func (o *PublishRequestData) GetSubjectOk() (*string, bool) {
-	if o == nil  {
-		return nil, false
-	}
-	return o.Subject.Get(), o.Subject.IsSet()
-}
-
-// HasSubject returns a boolean if a field has been set.
-func (o *PublishRequestData) HasSubject() bool {
-	if o != nil && o.Subject.IsSet() {
-		return true
-	}
-
-	return false
-}
-
-// SetSubject gets a reference to the given NullableString and assigns it to the Subject field.
-func (o *PublishRequestData) SetSubject(v string) {
-	o.Subject.Set(&v)
-}
-// SetSubjectNil sets the value for Subject to be an explicit nil
-func (o *PublishRequestData) SetSubjectNil() {
-	o.Subject.Set(nil)
-}
-
-// UnsetSubject ensures that no value is present for Subject, not even an explicit nil
-func (o *PublishRequestData) UnsetSubject() {
-	o.Subject.Unset()
-}
-
 // GetTargetOrgs returns the TargetOrgs field value if set, zero value otherwise (both if not set or set to explicit null).
 func (o *PublishRequestData) GetTargetOrgs() []string {
 	if o == nil  {
@@ -251,9 +208,6 @@ func (o PublishRequestData) MarshalJSON() ([]byte, error) {
 	}
 	if o.Time.IsSet() {
 		toSerialize["time"] = o.Time.Get()
-	}
-	if o.Subject.IsSet() {
-		toSerialize["subject"] = o.Subject.Get()
 	}
 	if o.TargetOrgs != nil {
 		toSerialize["targetOrgs"] = o.TargetOrgs
