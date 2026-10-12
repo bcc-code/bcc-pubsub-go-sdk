@@ -35,10 +35,8 @@ func TestPublishPostsData(t *testing.T) {
 	if gotPath != "/Publish" {
 		t.Errorf("path = %s, want /Publish", gotPath)
 	}
-	if gotBody["data"] != "payload" || gotBody["type"] != "my.type" {
+	// Only the set fields may be sent: no "message", and no empty "time" (the API rejects it).
+	if len(gotBody) != 2 || gotBody["data"] != "payload" || gotBody["type"] != "my.type" {
 		t.Errorf("unexpected body: %v", gotBody)
-	}
-	if _, ok := gotBody["message"]; ok {
-		t.Error("message key must not be present")
 	}
 }
