@@ -5,7 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **Type** | **string** |  | 
-**Message** | **string** |  | 
+**Data** | **string** |  | 
 **Time** | Pointer to **NullableString** |  | [optional] 
 **TargetOrgs** | Pointer to **[]string** |  | [optional] 
 **RequiredScopes** | Pointer to **[]string** |  | [optional] 
@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 
 ### NewPublishRequestData
 
-`func NewPublishRequestData(type_ string, message string, ) *PublishRequestData`
+`func NewPublishRequestData(type_ string, data string, ) *PublishRequestData`
 
 NewPublishRequestData instantiates a new PublishRequestData object
 This constructor will assign default values to properties that have it defined,
@@ -49,24 +49,24 @@ and a boolean to check if the value has been set.
 SetType sets Type field to given value.
 
 
-### GetMessage
+### GetData
 
-`func (o *PublishRequestData) GetMessage() string`
+`func (o *PublishRequestData) GetData() string`
 
-GetMessage returns the Message field if non-nil, zero value otherwise.
+GetData returns the Data field if non-nil, zero value otherwise.
 
-### GetMessageOk
+### GetDataOk
 
-`func (o *PublishRequestData) GetMessageOk() (*string, bool)`
+`func (o *PublishRequestData) GetDataOk() (*string, bool)`
 
-GetMessageOk returns a tuple with the Message field if it's non-nil, zero value otherwise
+GetDataOk returns a tuple with the Data field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetMessage
+### SetData
 
-`func (o *PublishRequestData) SetMessage(v string)`
+`func (o *PublishRequestData) SetData(v string)`
 
-SetMessage sets Message field to given value.
+SetData sets Data field to given value.
 
 
 ### GetTime

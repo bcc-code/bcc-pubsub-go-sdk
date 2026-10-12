@@ -17,7 +17,7 @@ import (
 // PublishRequestData struct for PublishRequestData
 type PublishRequestData struct {
 	Type string `json:"type"`
-	Message string `json:"message"`
+	Data string `json:"data"`
 	Time NullableString `json:"time,omitempty"`
 	TargetOrgs []string `json:"targetOrgs,omitempty"`
 	RequiredScopes []string `json:"requiredScopes,omitempty"`
@@ -27,10 +27,10 @@ type PublishRequestData struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewPublishRequestData(type_ string, message string) *PublishRequestData {
+func NewPublishRequestData(type_ string, data string) *PublishRequestData {
 	this := PublishRequestData{}
 	this.Type = type_
-	this.Message = message
+	this.Data = data
 	return &this
 }
 
@@ -66,28 +66,28 @@ func (o *PublishRequestData) SetType(v string) {
 	o.Type = v
 }
 
-// GetMessage returns the Message field value
-func (o *PublishRequestData) GetMessage() string {
+// GetData returns the Data field value
+func (o *PublishRequestData) GetData() string {
 	if o == nil {
 		var ret string
 		return ret
 	}
 
-	return o.Message
+	return o.Data
 }
 
-// GetMessageOk returns a tuple with the Message field value
+// GetDataOk returns a tuple with the Data field value
 // and a boolean to check if the value has been set.
-func (o *PublishRequestData) GetMessageOk() (*string, bool) {
+func (o *PublishRequestData) GetDataOk() (*string, bool) {
 	if o == nil  {
 		return nil, false
 	}
-	return &o.Message, true
+	return &o.Data, true
 }
 
-// SetMessage sets field value
-func (o *PublishRequestData) SetMessage(v string) {
-	o.Message = v
+// SetData sets field value
+func (o *PublishRequestData) SetData(v string) {
+	o.Data = v
 }
 
 // GetTime returns the Time field value if set, zero value otherwise (both if not set or set to explicit null).
@@ -204,7 +204,7 @@ func (o PublishRequestData) MarshalJSON() ([]byte, error) {
 		toSerialize["type"] = o.Type
 	}
 	if true {
-		toSerialize["message"] = o.Message
+		toSerialize["data"] = o.Data
 	}
 	if o.Time.IsSet() {
 		toSerialize["time"] = o.Time.Get()
