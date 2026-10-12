@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 )
 
 // maxErrorBodyLength is the maximum number of bytes of the raw response body kept in Error.Body.
@@ -22,6 +24,8 @@ type Error struct {
 	Title string `json:"title"`
 	// Detail is the ProblemDetails detail.
 	Detail string `json:"detail"`
+	// Errors holds the field errors of a ValidationProblemDetails response, keyed by field or JSON path.
+	Errors map[string][]string `json:"errors"`
 	// Body is the raw response body, truncated to 1024 bytes.
 	Body string `json:"-"`
 }
@@ -53,6 +57,8 @@ func (e *Error) Error() string {
 	switch {
 	case e.Detail != "":
 		return message + ": " + e.Detail
+	case len(e.Errors) > 0:
+		return message + ": " + e.validationErrors()
 	case e.Title != "":
 		return message + ": " + e.Title
 	case e.Body != "":
@@ -60,4 +66,19 @@ func (e *Error) Error() string {
 	}
 
 	return message
+}
+
+// validationErrors formats Errors as "field: message, message; field: message", sorted by field.
+func (e *Error) validationErrors() string {
+	fields := make([]string, 0, len(e.Errors))
+	for field := range e.Errors {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		parts = append(parts, field+": "+strings.Join(e.Errors[field], ", "))
+	}
+	return strings.Join(parts, "; ")
 }

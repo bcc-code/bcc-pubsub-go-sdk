@@ -36,6 +36,28 @@ func TestRequestProblemDetails(t *testing.T) {
 	}
 }
 
+func TestRequestValidationProblemDetails(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation errors occurred.","status":400,"errors":{"Type":["The Type field is required."],"$.time":["The JSON value could not be converted.","Second message."]}}`))
+	})
+
+	err := client.Request(context.Background(), http.MethodPost, client.URL("Publish"), nil, nil)
+
+	var apiErr *Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *Error, got %T: %v", err, err)
+	}
+	if len(apiErr.Errors) != 2 || apiErr.Errors["Type"][0] != "The Type field is required." {
+		t.Errorf("unexpected Errors: %+v", apiErr.Errors)
+	}
+	want := "pubsub: 400 Bad Request: $.time: The JSON value could not be converted., Second message.; Type: The Type field is required."
+	if err.Error() != want {
+		t.Errorf("Error() = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestRequestPlainTextError(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
