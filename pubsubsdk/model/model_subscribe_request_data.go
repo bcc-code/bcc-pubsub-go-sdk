@@ -20,6 +20,10 @@ type SubscribeRequestData struct {
 	EndPoint string `json:"endPoint"`
 	SubscriptionId NullableString `json:"subscriptionId,omitempty"`
 	Scopes []string `json:"scopes,omitempty"`
+	// Orgs limits the subscription to these orgs. They must be a subset of the orgs
+	// in the access token, otherwise the API returns 400. When nil, all orgs in the
+	// token are used.
+	Orgs []string `json:"orgs,omitempty"`
 }
 
 // NewSubscribeRequestData instantiates a new SubscribeRequestData object
@@ -164,6 +168,39 @@ func (o *SubscribeRequestData) SetScopes(v []string) {
 	o.Scopes = v
 }
 
+// GetOrgs returns the Orgs field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *SubscribeRequestData) GetOrgs() []string {
+	if o == nil  {
+		var ret []string
+		return ret
+	}
+	return o.Orgs
+}
+
+// GetOrgsOk returns a tuple with the Orgs field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *SubscribeRequestData) GetOrgsOk() (*[]string, bool) {
+	if o == nil || o.Orgs == nil {
+		return nil, false
+	}
+	return &o.Orgs, true
+}
+
+// HasOrgs returns a boolean if a field has been set.
+func (o *SubscribeRequestData) HasOrgs() bool {
+	if o != nil && o.Orgs != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetOrgs gets a reference to the given []string and assigns it to the Orgs field.
+func (o *SubscribeRequestData) SetOrgs(v []string) {
+	o.Orgs = v
+}
+
 func (o SubscribeRequestData) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -177,6 +214,9 @@ func (o SubscribeRequestData) MarshalJSON() ([]byte, error) {
 	}
 	if o.Scopes != nil {
 		toSerialize["scopes"] = o.Scopes
+	}
+	if o.Orgs != nil {
+		toSerialize["orgs"] = o.Orgs
 	}
 	return json.Marshal(toSerialize)
 }

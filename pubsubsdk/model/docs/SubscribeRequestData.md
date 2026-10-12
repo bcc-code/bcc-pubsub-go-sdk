@@ -8,6 +8,7 @@ Name | Type | Description | Notes
 **EndPoint** | **string** |  | 
 **SubscriptionId** | Pointer to **NullableString** |  | [optional] 
 **Scopes** | Pointer to **[]string** |  | [optional] 
+**Orgs** | Pointer to **[]string** | Limits the subscription to these orgs. Must be a subset of the orgs in the access token, otherwise the API returns 400. When nil, all orgs in the token are used. | [optional] 
 
 ## Methods
 
@@ -138,6 +139,31 @@ HasScopes returns a boolean if a field has been set.
 `func (o *SubscribeRequestData) UnsetScopes()`
 
 UnsetScopes ensures that no value is present for Scopes, not even an explicit nil
+
+### GetOrgs
+
+`func (o *SubscribeRequestData) GetOrgs() []string`
+
+GetOrgs returns the Orgs field if non-nil, zero value otherwise.
+
+### GetOrgsOk
+
+`func (o *SubscribeRequestData) GetOrgsOk() (*[]string, bool)`
+
+GetOrgsOk returns a tuple with the Orgs field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetOrgs
+
+`func (o *SubscribeRequestData) SetOrgs(v []string)`
+
+SetOrgs sets Orgs field to given value.
+
+### HasOrgs
+
+`func (o *SubscribeRequestData) HasOrgs() bool`
+
+HasOrgs returns a boolean if a field has been set.
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 
