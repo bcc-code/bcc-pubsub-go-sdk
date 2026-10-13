@@ -9,6 +9,7 @@ Name | Type | Description | Notes
 **Time** | Pointer to **NullableString** |  | [optional] 
 **TargetOrgs** | Pointer to **[]string** |  | [optional] 
 **RequiredScopes** | Pointer to **[]string** |  | [optional] 
+**Attributes** | Pointer to **map[string]string** | Forwarded to subscribers in EventMessage.Attributes. The reserved keys publisherId, targetOrgs, requiredScopes, time, traceparent and tracestate are ignored by the API. | [optional] 
 
 ## Methods
 
@@ -174,6 +175,31 @@ HasRequiredScopes returns a boolean if a field has been set.
 `func (o *PublishRequestData) UnsetRequiredScopes()`
 
 UnsetRequiredScopes ensures that no value is present for RequiredScopes, not even an explicit nil
+
+### GetAttributes
+
+`func (o *PublishRequestData) GetAttributes() map[string]string`
+
+GetAttributes returns the Attributes field if non-nil, zero value otherwise.
+
+### GetAttributesOk
+
+`func (o *PublishRequestData) GetAttributesOk() (*map[string]string, bool)`
+
+GetAttributesOk returns a tuple with the Attributes field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetAttributes
+
+`func (o *PublishRequestData) SetAttributes(v map[string]string)`
+
+SetAttributes sets Attributes field to given value.
+
+### HasAttributes
+
+`func (o *PublishRequestData) HasAttributes() bool`
+
+HasAttributes returns a boolean if a field has been set.
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

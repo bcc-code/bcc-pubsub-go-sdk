@@ -31,3 +31,17 @@ func TestPublishRequestDataMarshalsData(t *testing.T) {
 		t.Errorf("type = %v, want my.type", m["type"])
 	}
 }
+
+func TestPublishRequestDataAttributes(t *testing.T) {
+	d := NewPublishRequestData("my.type", "payload")
+
+	if _, ok := marshalToMap(t, d)["attributes"]; ok {
+		t.Error("attributes key must be absent when nil")
+	}
+
+	d.SetAttributes(map[string]string{"tenant": "abc"})
+	attrs, ok := marshalToMap(t, d)["attributes"].(map[string]any)
+	if !ok || attrs["tenant"] != "abc" {
+		t.Errorf("unexpected attributes: %v", attrs)
+	}
+}
