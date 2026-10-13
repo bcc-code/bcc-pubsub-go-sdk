@@ -71,7 +71,7 @@ func (m *Client) Request(ctx context.Context, method, uri string, payload any, r
 
 	// If the response contains a client or a server error then return the error.
 	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("request failed: %s", http.StatusText(response.StatusCode))
+		return newError(response)
 	}
 
 	if result == nil {
