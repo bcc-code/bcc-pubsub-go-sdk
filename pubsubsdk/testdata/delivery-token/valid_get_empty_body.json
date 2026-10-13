@@ -1,0 +1,26 @@
+{
+  "description": "Valid token for a GET dispatch, signed over an empty body.",
+  "issuer": "https://pubsub.test",
+  "audience": "client-a",
+  "now": 1791806410,
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "AntC5NWUqCchybqPIemkE02n-BrOIQ8lhwV68NX-nOU",
+        "y": "S6XOkp8BcQ1uzKKYL2ChriTbZNo-Swe3Xlal6d9cB_s",
+        "kid": "1",
+        "use": "sig",
+        "alg": "ES256"
+      }
+    ]
+  },
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjEiLCJ0eXAiOiJKV1QifQ.eyJhdWQiOiJjbGllbnQtYSIsImlzcyI6Imh0dHBzOi8vcHVic3ViLnRlc3QiLCJleHAiOjE3OTE4MDY3MDAsImlhdCI6MTc5MTgwNjQwMCwic3ViIjoiY2xpZW50LWEtbWVtYmVyX2NoYW5nZWQiLCJqdGkiOiJtLTEiLCJiZGgiOiI0N0RFUXBqOEhCU2EtX1RJbVctNUpDZXVRZVJrbTVOTXBKV1pHM2hTdUZVIn0.ScxspIaRvfUWNfoPd4W3Y4Jf8NvbLb40IEAKTzOU6SnsKZCdzTn3NCJ9sRmBsbL25pRe3SWF0n80-q33U738Mg",
+  "bodyBase64": "",
+  "expected": {
+    "valid": true,
+    "subject": "client-a-member_changed",
+    "jwtId": "m-1"
+  }
+}

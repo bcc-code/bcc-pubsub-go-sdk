@@ -1,0 +1,25 @@
+{
+  "description": "Signed with a key that is not in the JWKS.",
+  "issuer": "https://pubsub.test",
+  "audience": "client-a",
+  "now": 1791806410,
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "8Fvb5ePFetKu4R6u7miPCkLYCsp2gjLJKfKum0NHtsU",
+        "y": "FyjAhW-JdaB8WDK2hNyTEpjBPM4sjMR-qBc0hJpkS9s",
+        "kid": "2",
+        "use": "sig",
+        "alg": "ES256"
+      }
+    ]
+  },
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjEiLCJ0eXAiOiJKV1QifQ.eyJhdWQiOiJjbGllbnQtYSIsImlzcyI6Imh0dHBzOi8vcHVic3ViLnRlc3QiLCJleHAiOjE3OTE4MDY3MDAsImlhdCI6MTc5MTgwNjQwMCwic3ViIjoiY2xpZW50LWEtbWVtYmVyX2NoYW5nZWQiLCJqdGkiOiJtLTEiLCJiZGgiOiJhLVFRaWJ3NDcwQjEyUUlkeEVzM1l1MEJXczdsaDRhLXlKc211aGNtWVRJIn0.kbWUDDvGcVKS1z6noMZxNiEZSJp3sy-zwd8qQR8uj0f-NHrjX77rnA6lq-ZfeAOUCKK2UY5yEXvyUhLPXuC7SA",
+  "bodyBase64": "eyJzcGVjdmVyc2lvbiI6IjEuMCIsImlkIjoibS0xIiwidHlwZSI6Im1lbWJlcl9jaGFuZ2VkIiwiZGF0YSI6IntcIm5hbWVcIjpcIsOmw7jDpVwifSJ9",
+  "expected": {
+    "valid": false,
+    "reason": "unknown_key"
+  }
+}
