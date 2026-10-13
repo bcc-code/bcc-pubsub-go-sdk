@@ -375,6 +375,32 @@ func TestKeySetUnavailable(t *testing.T) {
 	}
 }
 
+func TestKeySetUnavailableWrapsCause(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	cause := errors.New("network down")
+	verifier, err := NewDeliveryVerifier(DeliveryVerifierOptions{
+		Issuer: testIssuer, Audience: "client-a",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, cause })},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier.opts.now = func() time.Time { return now }
+	verifier.keys.now = verifier.opts.now
+
+	_, err = verifier.Verify(context.Background(), newTestKey(t, "1").sign(t, now, nil), testBody)
+	if !errors.Is(err, ErrDeliveryKeysUnavailable) {
+		t.Fatalf("expected ErrDeliveryKeysUnavailable, got %v", err)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("expected the fetch error to be unwrappable, got %v", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
 func TestFailedRefreshKeepsCachedKeys(t *testing.T) {
 	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	key := newTestKey(t, "1")

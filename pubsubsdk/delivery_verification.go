@@ -378,7 +378,10 @@ func (c *jwksCache) resolve(snap *jwksSnapshot, kid string) (key *ecdsa.PublicKe
 
 func lookup(url string, snap *jwksSnapshot, kid string) (*ecdsa.PublicKey, error) {
 	if snap.keys == nil {
-		return nil, fmt.Errorf("%w: could not fetch %s: %v", ErrDeliveryKeysUnavailable, url, snap.lastErr)
+		if snap.lastErr == nil {
+			return nil, fmt.Errorf("%w: could not fetch %s", ErrDeliveryKeysUnavailable, url)
+		}
+		return nil, fmt.Errorf("%w: could not fetch %s: %w", ErrDeliveryKeysUnavailable, url, snap.lastErr)
 	}
 	return snap.keys[kid], nil
 }
