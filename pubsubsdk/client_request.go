@@ -10,6 +10,9 @@ import (
 	"net/url"
 )
 
+// maxResponseBodySize caps how much of a response body is read.
+const maxResponseBodySize = 10 << 20
+
 func (c *Client) URL(parts ...string) string {
 	path, _ := url.JoinPath(c.apiUrl, parts...)
 	return path
@@ -78,9 +81,12 @@ func (m *Client) Request(ctx context.Context, method, uri string, payload any, r
 		return nil
 	}
 
-	responseBody, err := io.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBodySize+1))
 	if err != nil {
 		return fmt.Errorf("failed to read the response body: %w", err)
+	}
+	if len(responseBody) > maxResponseBodySize {
+		return fmt.Errorf("response body exceeds the limit of %d bytes", maxResponseBodySize)
 	}
 
 	if err = json.Unmarshal(responseBody, result); err != nil {
