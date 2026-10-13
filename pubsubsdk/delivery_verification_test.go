@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -453,6 +454,36 @@ func TestRequireDelivery(t *testing.T) {
 	}
 	if code := send(key.sign(t, now, nil), `{"id":"tampered"}`); code != http.StatusUnauthorized {
 		t.Fatalf("changed body: %d", code)
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+func TestRequireDeliveryBodyErrors(t *testing.T) {
+	now := time.Now()
+	key := newTestKey(t, "1")
+	jwks := &jwksServer{keys: []testKey{key}}
+	verifier := newTestVerifier(t, testIssuer, "client-a", jwks.start(t), func() time.Time { return now })
+	handler := RequireDelivery(verifier, 8, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handler must not run")
+	}))
+	token := key.sign(t, now, nil)
+
+	send := func(body io.Reader) int {
+		req := httptest.NewRequest(http.MethodPost, "/hook", body)
+		req.Header.Set(DeliveryTokenHeader, token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := send(strings.NewReader("more than eight bytes")); code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body: %d", code)
+	}
+	if code := send(failingReader{}); code != http.StatusBadRequest {
+		t.Fatalf("unreadable body: %d", code)
 	}
 }
 

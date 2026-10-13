@@ -215,7 +215,7 @@ func (v *DeliveryVerifier) Verify(ctx context.Context, token string, body []byte
 
 // RequireDelivery is net/http middleware that lets a push through only with a valid X-PubSub-Token. It reads the
 // body (up to maxBodyBytes; 0 means 30 MB), verifies it, and puts it back for next. A rejected push gets 401, an
-// unavailable key set 503. The verified claims are in the request context (see DeliveryClaimsFrom).
+// unavailable key set 503, a body over the limit 413 and a body that cannot be read 400. The verified claims are in the request context (see DeliveryClaimsFrom).
 func RequireDelivery(verifier *DeliveryVerifier, maxBodyBytes int64, next http.Handler) http.Handler {
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = 30 << 20
@@ -230,7 +230,12 @@ func RequireDelivery(verifier *DeliveryVerifier, maxBodyBytes int64, next http.H
 
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+			} else {
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			}
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
