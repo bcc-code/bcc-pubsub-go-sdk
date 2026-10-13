@@ -54,5 +54,6 @@ func WithTokenSource(tokenSource oauth2.TokenSource) ClientOption {
 func WithClient(client *http.Client) ClientOption {
 	return func(m *Client) {
 		m.http = client
+		m.userClient = client != nil
 	}
 }

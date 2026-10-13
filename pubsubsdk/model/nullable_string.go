@@ -8,6 +8,10 @@ func (s NullableString) Get() *string {
 }
 
 func (s *NullableString) Set(str *string) {
+	if str == nil {
+		s.Unset()
+		return
+	}
 	*s = NullableString(*str)
 }
 
