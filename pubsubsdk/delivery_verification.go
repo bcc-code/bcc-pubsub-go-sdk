@@ -148,32 +148,23 @@ func (v *DeliveryVerifier) Verify(ctx context.Context, token string, body []byte
 	if len(parts) != 3 {
 		return nil, reject(ReasonMalformed)
 	}
-	var header struct {
-		Alg string `json:"alg"`
-		Kid string `json:"kid"`
-	}
-	var payload struct {
-		Iss string          `json:"iss"`
-		Aud json.RawMessage `json:"aud"`
-		Sub string          `json:"sub"`
-		Jti string          `json:"jti"`
-		Bdh string          `json:"bdh"`
-		Exp *float64        `json:"exp"`
-		Iat *float64        `json:"iat"`
-	}
-	if decodeSegment(parts[0], &header) != nil || decodeSegment(parts[1], &payload) != nil {
+	// Header and payload must be JSON objects; their members are typed only where they are used, so a claim of the
+	// wrong type gets the same reason as in the .NET and Node SDKs.
+	var header, payload map[string]json.RawMessage
+	if decodeSegment(parts[0], &header) != nil || decodeSegment(parts[1], &payload) != nil || header == nil || payload == nil {
 		return nil, reject(ReasonMalformed)
 	}
 
 	// Only ES256: rejects "none" and HMAC keyed with the public key before any key is looked up.
-	if header.Alg != "ES256" {
+	if alg, _ := textOf(header["alg"]); alg != "ES256" {
 		return nil, reject(ReasonInvalidSignature)
 	}
-	if header.Kid == "" {
+	kid, _ := textOf(header["kid"])
+	if kid == "" {
 		return nil, reject(ReasonUnknownKey)
 	}
 
-	key, err := v.keys.find(ctx, header.Kid)
+	key, err := v.keys.find(ctx, kid)
 	if err != nil {
 		return nil, err
 	}
@@ -185,19 +176,25 @@ func (v *DeliveryVerifier) Verify(ctx context.Context, token string, body []byte
 		return nil, reject(ReasonInvalidSignature)
 	}
 
-	if payload.Exp == nil || payload.Iat == nil || payload.Bdh == "" || payload.Sub == "" || payload.Jti == "" {
+	exp, expOK := numberOf(payload["exp"])
+	iat, iatOK := numberOf(payload["iat"])
+	bdh, _ := textOf(payload["bdh"])
+	sub, _ := textOf(payload["sub"])
+	jti, _ := textOf(payload["jti"])
+	if !expOK || !iatOK || bdh == "" || sub == "" || jti == "" {
 		return nil, reject(ReasonMalformed)
 	}
-	if strings.TrimRight(payload.Iss, "/") != v.issuer {
+	iss, _ := textOf(payload["iss"])
+	if strings.TrimRight(iss, "/") != v.issuer {
 		return nil, reject(ReasonWrongIssuer)
 	}
-	if !hasAudience(payload.Aud, v.opts.Audience) {
+	if !hasAudience(payload["aud"], v.opts.Audience) {
 		return nil, reject(ReasonWrongAudience)
 	}
 
 	now := v.opts.now()
-	expires := time.Unix(int64(*payload.Exp), 0)
-	issuedAt := time.Unix(int64(*payload.Iat), 0)
+	expires := time.Unix(int64(exp), 0)
+	issuedAt := time.Unix(int64(iat), 0)
 	if now.After(expires.Add(v.opts.ClockSkew)) {
 		return nil, reject(ReasonExpired)
 	}
@@ -206,11 +203,11 @@ func (v *DeliveryVerifier) Verify(ctx context.Context, token string, body []byte
 	}
 
 	hash := sha256.Sum256(body)
-	if payload.Bdh != base64.RawURLEncoding.EncodeToString(hash[:]) {
+	if bdh != base64.RawURLEncoding.EncodeToString(hash[:]) {
 		return nil, reject(ReasonBodyMismatch)
 	}
 
-	return &DeliveryClaims{Subject: payload.Sub, JwtID: payload.Jti, IssuedAt: issuedAt}, nil
+	return &DeliveryClaims{Subject: sub, JwtID: jti, IssuedAt: issuedAt}, nil
 }
 
 // RequireDelivery is net/http middleware that lets a push through only with a valid X-PubSub-Token. It reads the
@@ -285,6 +282,22 @@ func signedBy(key *ecdsa.PublicKey, parts []string) bool {
 	r := new(big.Int).SetBytes(signature[:32])
 	s := new(big.Int).SetBytes(signature[32:])
 	return ecdsa.Verify(key, digest[:], r, s)
+}
+
+// textOf returns the value of a JSON string member; ok is false when it is missing or not a string.
+func textOf(raw json.RawMessage) (value string, ok bool) {
+	if json.Unmarshal(raw, &value) != nil || string(bytes.TrimSpace(raw)) == "null" {
+		return "", false
+	}
+	return value, true
+}
+
+// numberOf returns the value of a JSON number member; ok is false when it is missing or not a number.
+func numberOf(raw json.RawMessage) (value float64, ok bool) {
+	if json.Unmarshal(raw, &value) != nil || string(bytes.TrimSpace(raw)) == "null" {
+		return 0, false
+	}
+	return value, true
 }
 
 func hasAudience(raw json.RawMessage, audience string) bool {

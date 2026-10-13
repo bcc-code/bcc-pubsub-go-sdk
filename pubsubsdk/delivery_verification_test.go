@@ -433,6 +433,47 @@ func TestMissingRequiredClaimIsMalformed(t *testing.T) {
 	}
 }
 
+func TestMalformedHeaderTypesGiveSameReasonAsOtherSdks(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	key := newTestKey(t, "1")
+	jwks := &jwksServer{keys: []testKey{key}}
+	verifier := newTestVerifier(t, testIssuer, "client-a", jwks.start(t), func() time.Time { return now })
+	segment := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	payload := strings.Split(key.sign(t, now, nil), ".")[1]
+
+	cases := []struct{ name, header, want string }{
+		{"non-string alg", `{"alg":123,"kid":"1"}`, "invalid_signature"},
+		{"non-string kid", `{"alg":"ES256","kid":5}`, "unknown_key"},
+		{"missing kid", `{"alg":"ES256"}`, "unknown_key"},
+		{"header is an array", `[]`, "malformed"},
+		{"header is null", `null`, "malformed"},
+		{"header is not JSON", `nope`, "malformed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			token := segment(c.header) + "." + payload + ".AAAA"
+			if got := reasonOf(second(verifier.Verify(context.Background(), token, testBody))); got != c.want {
+				t.Fatalf("expected %s, got %s", c.want, got)
+			}
+		})
+	}
+
+	t.Run("payload is not an object", func(t *testing.T) {
+		token := segment(`{"alg":"ES256","kid":"1"}`) + "." + segment(`[1]`) + ".AAAA"
+		if got := reasonOf(second(verifier.Verify(context.Background(), token, testBody))); got != "malformed" {
+			t.Fatalf("expected malformed, got %s", got)
+		}
+	})
+	t.Run("claim of the wrong type under a bad signature", func(t *testing.T) {
+		token := segment(`{"alg":"ES256","kid":"1"}`) + "." + segment(`{"exp":"soon"}`) + ".AAAA"
+		if got := reasonOf(second(verifier.Verify(context.Background(), token, testBody))); got != "invalid_signature" {
+			t.Fatalf("expected invalid_signature, got %s", got)
+		}
+	})
+}
+
+func second(_ *DeliveryClaims, err error) error { return err }
+
 func TestRequireDelivery(t *testing.T) {
 	now := time.Now()
 	key := newTestKey(t, "1")
