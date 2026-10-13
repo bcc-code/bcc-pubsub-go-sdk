@@ -20,6 +20,9 @@ import (
 	"time"
 )
 
+// defaultFetchTimeout bounds a key set fetch, also when the caller's HTTPClient has no Timeout.
+const defaultFetchTimeout = 10 * time.Second
+
 // DeliveryTokenHeader is the header bcc-pubsub sends the signed delivery token in.
 const DeliveryTokenHeader = "X-PubSub-Token"
 
@@ -112,7 +115,7 @@ func NewDeliveryVerifier(opts DeliveryVerifierOptions) (*DeliveryVerifier, error
 		opts.JWKSRefreshInterval = time.Minute
 	}
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 10 * time.Second}
+		opts.HTTPClient = &http.Client{Timeout: defaultFetchTimeout}
 	}
 	if opts.now == nil {
 		opts.now = time.Now
@@ -127,6 +130,7 @@ func NewDeliveryVerifier(opts DeliveryVerifierOptions) (*DeliveryVerifier, error
 			cacheFor:  opts.JWKSCacheDuration,
 			refreshes: opts.JWKSRefreshInterval,
 			client:    opts.HTTPClient,
+			timeout:   defaultFetchTimeout,
 			now:       opts.now,
 		},
 	}, nil
@@ -305,6 +309,7 @@ type jwksCache struct {
 	cacheFor  time.Duration
 	refreshes time.Duration
 	client    *http.Client
+	timeout   time.Duration // bounds one fetch
 	now       func() time.Time
 
 	snapshot atomic.Pointer[jwksSnapshot]
@@ -335,7 +340,11 @@ func (c *jwksCache) find(ctx context.Context, kid string) (*ecdsa.PublicKey, err
 	}
 
 	now := c.now()
-	keys, err := c.fetch(ctx)
+	// The fetch is shared by every request waiting for the key set, so it does not end when the request that
+	// started it is cancelled. Recording that failure would block the next fetch for refreshes (or cacheFor).
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.timeout)
+	defer cancel()
+	keys, err := c.fetch(fetchCtx)
 	next := &jwksSnapshot{keys: snap.keys, fetchedAt: now, lastErr: err}
 	if err == nil {
 		next.keys = keys

@@ -309,6 +309,55 @@ func TestCachedKeyIsServedDuringSlowFetch(t *testing.T) {
 	<-unknownDone
 }
 
+func TestCancelledRequestDoesNotBlockRefetch(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	oldKey, newKey := newTestKey(t, "1"), newTestKey(t, "2")
+	jwks := &jwksServer{keys: []testKey{oldKey}}
+	verifier := newTestVerifier(t, testIssuer, "client-a", jwks.start(t), func() time.Time { return now })
+	if _, err := verifier.Verify(context.Background(), oldKey.sign(t, now, nil), testBody); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	jwks.mu.Lock()
+	jwks.keys = []testKey{newKey, oldKey}
+	jwks.mu.Unlock()
+
+	jwks.gate = make(chan struct{})
+	jwks.entered = make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = verifier.Verify(ctx, newKey.sign(t, now, nil), testBody)
+	}()
+	<-jwks.entered
+	cancel() // the request that started the fetch goes away while the fetch is in flight
+	close(jwks.gate)
+	<-done
+
+	if _, err := verifier.Verify(context.Background(), newKey.sign(t, now, nil), testBody); err != nil {
+		t.Fatalf("expected the cancelled request not to block the key set, got %v", err)
+	}
+	if got := jwks.requests.Load(); got != 2 {
+		t.Fatalf("expected 2 fetches, got %d", got)
+	}
+}
+
+func TestCancelledContextBeforeFetchDoesNotBlockRefetch(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	key := newTestKey(t, "1")
+	jwks := &jwksServer{keys: []testKey{key}}
+	verifier := newTestVerifier(t, testIssuer, "client-a", jwks.start(t), func() time.Time { return now })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _ = verifier.Verify(ctx, key.sign(t, now, nil), testBody)
+
+	if _, err := verifier.Verify(context.Background(), key.sign(t, now, nil), testBody); err != nil {
+		t.Fatalf("expected success with a live context, got %v", err)
+	}
+}
+
 func TestKeySetUnavailable(t *testing.T) {
 	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	jwks := &jwksServer{fail: true}
