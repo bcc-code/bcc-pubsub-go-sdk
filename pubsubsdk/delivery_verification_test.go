@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -160,11 +161,15 @@ type jwksServer struct {
 	fail     bool
 	requests atomic.Int32
 	gate     chan struct{}
+	entered  chan struct{} // when set, receives one value per request that reaches the handler
 }
 
 func (s *jwksServer) start(t *testing.T) *httptest.Server {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.requests.Add(1)
+		if s.entered != nil {
+			s.entered <- struct{}{}
+		}
 		if s.gate != nil {
 			<-s.gate
 		}
@@ -232,19 +237,28 @@ func TestConcurrentUnknownKeysFetchOnce(t *testing.T) {
 	_, _ = verifier.Verify(context.Background(), known.sign(t, now, nil), testBody)
 	now = now.Add(2 * time.Minute)
 
+	const n = 20
 	jwks.gate = make(chan struct{})
+	jwks.entered = make(chan struct{}, n)
 	unknown := newTestKey(t, "9").sign(t, now, nil)
 	var wg sync.WaitGroup
-	results := make(chan string, 20)
-	for i := 0; i < 20; i++ {
+	var started atomic.Int32
+	results := make(chan string, n)
+	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			started.Add(1)
 			_, err := verifier.Verify(context.Background(), unknown, testBody)
 			results <- reasonOf(err)
 		}()
 	}
-	time.Sleep(200 * time.Millisecond)
+	// The first fetch is in flight and blocked; wait until every goroutine has started, so the others queue
+	// behind it, then let it finish.
+	<-jwks.entered
+	for started.Load() < n {
+		runtime.Gosched()
+	}
 	close(jwks.gate)
 	wg.Wait()
 	close(results)
@@ -257,6 +271,42 @@ func TestConcurrentUnknownKeysFetchOnce(t *testing.T) {
 	if got := jwks.requests.Load(); got != 2 {
 		t.Fatalf("expected 2 fetches, got %d", got)
 	}
+}
+
+func TestCachedKeyIsServedDuringSlowFetch(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	known := newTestKey(t, "1")
+	jwks := &jwksServer{keys: []testKey{known}}
+	verifier := newTestVerifier(t, testIssuer, "client-a", jwks.start(t), func() time.Time { return now })
+	if _, err := verifier.Verify(context.Background(), known.sign(t, now, nil), testBody); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+
+	jwks.gate = make(chan struct{})
+	jwks.entered = make(chan struct{}, 1)
+	unknownDone := make(chan struct{})
+	go func() {
+		defer close(unknownDone)
+		_, _ = verifier.Verify(context.Background(), newTestKey(t, "9").sign(t, now, nil), testBody)
+	}()
+	<-jwks.entered // the fetch for the unknown kid is now blocked in the server
+
+	cachedDone := make(chan error, 1)
+	go func() {
+		_, err := verifier.Verify(context.Background(), known.sign(t, now, nil), testBody)
+		cachedDone <- err
+	}()
+	select {
+	case err := <-cachedDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a cached key waited for the fetch")
+	}
+	close(jwks.gate)
+	<-unknownDone
 }
 
 func TestKeySetUnavailable(t *testing.T) {

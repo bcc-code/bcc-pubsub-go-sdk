@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -295,6 +296,10 @@ func hasAudience(raw json.RawMessage, audience string) bool {
 
 // jwksCache holds the issuer's keys. It fetches again when the cache is older than cacheFor, or on an unknown key id
 // at most once per refreshes, however many requests ask at the same time.
+//
+// The key set is an immutable snapshot behind an atomic pointer, so a request that finds its key in a fresh cache
+// never waits for a fetch. Only a request that needs a fetch takes fetchMu; it looks at the snapshot again after
+// getting the lock, because the request that held it may just have fetched.
 type jwksCache struct {
 	url       string
 	cacheFor  time.Duration
@@ -302,43 +307,66 @@ type jwksCache struct {
 	client    *http.Client
 	now       func() time.Time
 
-	mu        sync.Mutex
+	snapshot atomic.Pointer[jwksSnapshot]
+	fetchMu  sync.Mutex
+}
+
+type jwksSnapshot struct {
 	keys      map[string]*ecdsa.PublicKey // nil until a fetch has succeeded
-	fetchedAt time.Time                   // time of the last fetch attempt
+	fetchedAt time.Time                   // time of the last fetch attempt; zero when none has been made
 	lastErr   error
 }
 
 func (c *jwksCache) find(ctx context.Context, kid string) (*ecdsa.PublicKey, error) {
+	if key, done, err := c.resolve(c.snapshot.Load(), kid); done {
+		return key, err
+	}
+
 	// One lock around the fetch: requests that arrive meanwhile wait for it and then use its result.
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.fetchMu.Lock()
+	defer c.fetchMu.Unlock()
+
+	snap := c.snapshot.Load()
+	if key, done, err := c.resolve(snap, kid); done {
+		return key, err
+	}
+	if snap == nil {
+		snap = &jwksSnapshot{}
+	}
 
 	now := c.now()
-	attempted := !c.fetchedAt.IsZero()
-	if key, ok := c.keys[kid]; ok && now.Sub(c.fetchedAt) < c.cacheFor {
-		return key, nil
-	}
-	// Fetched (or tried) a moment ago: an unknown key id does not cause another fetch.
-	if attempted && now.Sub(c.fetchedAt) < c.refreshes {
-		return c.lookup(kid)
-	}
-
 	keys, err := c.fetch(ctx)
-	c.fetchedAt = now
-	if err != nil {
-		// Keep using the previous key set if there is one.
-		c.lastErr = err
-	} else {
-		c.keys, c.lastErr = keys, nil
+	next := &jwksSnapshot{keys: snap.keys, fetchedAt: now, lastErr: err}
+	if err == nil {
+		next.keys = keys
 	}
-	return c.lookup(kid)
+	// On error the previous key set stays in use if there is one.
+	c.snapshot.Store(next)
+	return lookup(c.url, next, kid)
 }
 
-func (c *jwksCache) lookup(kid string) (*ecdsa.PublicKey, error) {
-	if c.keys == nil {
-		return nil, fmt.Errorf("%w: could not fetch %s: %v", ErrDeliveryKeysUnavailable, c.url, c.lastErr)
+// resolve answers from snap when no fetch is needed: the key is cached and fresh, or the cache was filled (or tried)
+// less than refreshes ago, so an unknown key id does not cause another fetch. done is false when a fetch is needed.
+func (c *jwksCache) resolve(snap *jwksSnapshot, kid string) (key *ecdsa.PublicKey, done bool, err error) {
+	if snap == nil || snap.fetchedAt.IsZero() {
+		return nil, false, nil
 	}
-	return c.keys[kid], nil
+	age := c.now().Sub(snap.fetchedAt)
+	if k, ok := snap.keys[kid]; ok && age < c.cacheFor {
+		return k, true, nil
+	}
+	if age < c.refreshes {
+		key, err = lookup(c.url, snap, kid)
+		return key, true, err
+	}
+	return nil, false, nil
+}
+
+func lookup(url string, snap *jwksSnapshot, kid string) (*ecdsa.PublicKey, error) {
+	if snap.keys == nil {
+		return nil, fmt.Errorf("%w: could not fetch %s: %v", ErrDeliveryKeysUnavailable, url, snap.lastErr)
+	}
+	return snap.keys[kid], nil
 }
 
 func (c *jwksCache) fetch(ctx context.Context) (map[string]*ecdsa.PublicKey, error) {
