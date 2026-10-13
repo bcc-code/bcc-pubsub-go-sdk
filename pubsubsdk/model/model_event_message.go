@@ -23,6 +23,8 @@ type EventMessage struct {
 	Data NullableString `json:"data,omitempty"`
 	Time NullableString `json:"time,omitempty"`
 	Subject NullableString `json:"subject,omitempty"`
+	// Attributes are the custom attributes set by the publisher.
+	Attributes map[string]string `json:"attributes,omitempty"`
 }
 
 // NewEventMessage instantiates a new EventMessage object
@@ -336,6 +338,39 @@ func (o *EventMessage) UnsetSubject() {
 	o.Subject.Unset()
 }
 
+// GetAttributes returns the Attributes field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *EventMessage) GetAttributes() map[string]string {
+	if o == nil  {
+		var ret map[string]string
+		return ret
+	}
+	return o.Attributes
+}
+
+// GetAttributesOk returns a tuple with the Attributes field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *EventMessage) GetAttributesOk() (*map[string]string, bool) {
+	if o == nil || o.Attributes == nil {
+		return nil, false
+	}
+	return &o.Attributes, true
+}
+
+// HasAttributes returns a boolean if a field has been set.
+func (o *EventMessage) HasAttributes() bool {
+	if o != nil && o.Attributes != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetAttributes gets a reference to the given map[string]string and assigns it to the Attributes field.
+func (o *EventMessage) SetAttributes(v map[string]string) {
+	o.Attributes = v
+}
+
 func (o EventMessage) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.SpecVersion.IsSet() {
@@ -358,6 +393,9 @@ func (o EventMessage) MarshalJSON() ([]byte, error) {
 	}
 	if o.Subject.IsSet() {
 		toSerialize["subject"] = o.Subject.Get()
+	}
+	if o.Attributes != nil {
+		toSerialize["attributes"] = o.Attributes
 	}
 	return json.Marshal(toSerialize)
 }

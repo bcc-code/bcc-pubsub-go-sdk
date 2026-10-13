@@ -11,6 +11,7 @@ Name | Type | Description | Notes
 **Data** | Pointer to **NullableString** |  | [optional] 
 **Time** | Pointer to **NullableString** |  | [optional] 
 **Subject** | Pointer to **NullableString** |  | [optional] 
+**Attributes** | Pointer to **map[string]string** | Custom attributes set by the publisher. | [optional] 
 
 ## Methods
 
@@ -276,6 +277,31 @@ HasSubject returns a boolean if a field has been set.
 `func (o *EventMessage) UnsetSubject()`
 
 UnsetSubject ensures that no value is present for Subject, not even an explicit nil
+
+### GetAttributes
+
+`func (o *EventMessage) GetAttributes() map[string]string`
+
+GetAttributes returns the Attributes field if non-nil, zero value otherwise.
+
+### GetAttributesOk
+
+`func (o *EventMessage) GetAttributesOk() (*map[string]string, bool)`
+
+GetAttributesOk returns a tuple with the Attributes field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetAttributes
+
+`func (o *EventMessage) SetAttributes(v map[string]string)`
+
+SetAttributes sets Attributes field to given value.
+
+### HasAttributes
+
+`func (o *EventMessage) HasAttributes() bool`
+
+HasAttributes returns a boolean if a field has been set.
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 
