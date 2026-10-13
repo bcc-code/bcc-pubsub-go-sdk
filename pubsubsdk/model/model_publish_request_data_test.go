@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func marshalToMap(t *testing.T, v any) map[string]any {
@@ -43,5 +44,18 @@ func TestPublishRequestDataAttributes(t *testing.T) {
 	attrs, ok := marshalToMap(t, d)["attributes"].(map[string]any)
 	if !ok || attrs["tenant"] != "abc" {
 		t.Errorf("unexpected attributes: %v", attrs)
+	}
+}
+
+func TestPublishRequestDataScheduleTime(t *testing.T) {
+	d := NewPublishRequestData("my.type", "payload")
+
+	if _, ok := marshalToMap(t, d)["scheduleTime"]; ok {
+		t.Error("scheduleTime key must be absent when nil")
+	}
+
+	d.SetScheduleTime(time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC))
+	if got := marshalToMap(t, d)["scheduleTime"]; got != "2030-01-02T03:04:05Z" {
+		t.Errorf("scheduleTime = %v, want 2030-01-02T03:04:05Z", got)
 	}
 }

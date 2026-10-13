@@ -12,6 +12,7 @@ package model
 
 import (
 	"encoding/json"
+	"time"
 )
 
 // PublishRequestData struct for PublishRequestData
@@ -25,6 +26,8 @@ type PublishRequestData struct {
 	// The reserved keys publisherId, targetOrgs, requiredScopes, time, traceparent
 	// and tracestate are ignored by the API.
 	Attributes map[string]string `json:"attributes,omitempty"`
+	// ScheduleTime delays the publishing until this time. It is left out when nil.
+	ScheduleTime *time.Time `json:"scheduleTime,omitempty"`
 }
 
 // NewPublishRequestData instantiates a new PublishRequestData object
@@ -235,6 +238,25 @@ func (o *PublishRequestData) SetAttributes(v map[string]string) {
 	o.Attributes = v
 }
 
+// GetScheduleTime returns the ScheduleTime field value if set, zero value otherwise.
+func (o *PublishRequestData) GetScheduleTime() time.Time {
+	if o == nil || o.ScheduleTime == nil {
+		var ret time.Time
+		return ret
+	}
+	return *o.ScheduleTime
+}
+
+// HasScheduleTime returns a boolean if a field has been set.
+func (o *PublishRequestData) HasScheduleTime() bool {
+	return o != nil && o.ScheduleTime != nil
+}
+
+// SetScheduleTime gets a reference to the given time.Time and assigns it to the ScheduleTime field.
+func (o *PublishRequestData) SetScheduleTime(v time.Time) {
+	o.ScheduleTime = &v
+}
+
 func (o PublishRequestData) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -254,6 +276,9 @@ func (o PublishRequestData) MarshalJSON() ([]byte, error) {
 	}
 	if o.Attributes != nil {
 		toSerialize["attributes"] = o.Attributes
+	}
+	if o.ScheduleTime != nil {
+		toSerialize["scheduleTime"] = o.ScheduleTime
 	}
 	return json.Marshal(toSerialize)
 }
