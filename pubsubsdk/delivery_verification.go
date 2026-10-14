@@ -396,7 +396,12 @@ func lookup(url string, snap *jwksSnapshot, kid string) (*ecdsa.PublicKey, error
 		}
 		return nil, fmt.Errorf("%w: could not fetch %s: %w", ErrDeliveryKeysUnavailable, url, snap.lastErr)
 	}
-	return snap.keys[kid], nil
+	key, ok := snap.keys[kid]
+	if !ok && snap.lastErr != nil {
+		// The key may be new (a rotation) and only missing because the refresh failed: retry later instead of rejecting.
+		return nil, fmt.Errorf("%w: could not refresh %s: %w", ErrDeliveryKeysUnavailable, url, snap.lastErr)
+	}
+	return key, nil
 }
 
 func (c *jwksCache) fetch(ctx context.Context) (map[string]*ecdsa.PublicKey, error) {

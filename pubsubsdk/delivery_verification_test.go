@@ -417,6 +417,27 @@ func TestFailedRefreshKeepsCachedKeys(t *testing.T) {
 	}
 }
 
+// A rotated key the verifier could not fetch yet must be retried (503), not rejected (401).
+func TestUnknownKeyAfterFailedRefreshIsUnavailable(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	key := newTestKey(t, "1")
+	jwks := &jwksServer{keys: []testKey{key}}
+	verifier := newTestVerifier(t, testIssuer, "client-a", jwks.start(t), func() time.Time { return now })
+	_, _ = verifier.Verify(context.Background(), key.sign(t, now, nil), testBody)
+
+	now = now.Add(5 * time.Minute)
+	jwks.mu.Lock()
+	jwks.fail = true
+	jwks.mu.Unlock()
+	rotated := newTestKey(t, "2")
+	if _, err := verifier.Verify(context.Background(), rotated.sign(t, now, nil), testBody); !errors.Is(err, ErrDeliveryKeysUnavailable) {
+		t.Fatalf("expected ErrDeliveryKeysUnavailable, got %v", err)
+	}
+	if _, err := verifier.Verify(context.Background(), key.sign(t, now, nil), testBody); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMissingRequiredClaimIsMalformed(t *testing.T) {
 	for _, claim := range []string{"sub", "jti", "bdh", "exp", "iat"} {
 		t.Run(claim, func(t *testing.T) {
