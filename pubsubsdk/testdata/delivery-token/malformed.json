@@ -1,0 +1,25 @@
+{
+  "description": "Header value is not a JWT.",
+  "issuer": "https://pubsub.test",
+  "audience": "client-a",
+  "now": 1791806410,
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "AntC5NWUqCchybqPIemkE02n-BrOIQ8lhwV68NX-nOU",
+        "y": "S6XOkp8BcQ1uzKKYL2ChriTbZNo-Swe3Xlal6d9cB_s",
+        "kid": "1",
+        "use": "sig",
+        "alg": "ES256"
+      }
+    ]
+  },
+  "token": "not-a-jwt",
+  "bodyBase64": "eyJzcGVjdmVyc2lvbiI6IjEuMCIsImlkIjoibS0xIiwidHlwZSI6Im1lbWJlcl9jaGFuZ2VkIiwiZGF0YSI6IntcIm5hbWVcIjpcIsOmw7jDpVwifSJ9",
+  "expected": {
+    "valid": false,
+    "reason": "malformed"
+  }
+}

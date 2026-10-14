@@ -1,0 +1,25 @@
+{
+  "description": "HS256 token keyed with the public JWK (algorithm confusion).",
+  "issuer": "https://pubsub.test",
+  "audience": "client-a",
+  "now": 1791806410,
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "AntC5NWUqCchybqPIemkE02n-BrOIQ8lhwV68NX-nOU",
+        "y": "S6XOkp8BcQ1uzKKYL2ChriTbZNo-Swe3Xlal6d9cB_s",
+        "kid": "1",
+        "use": "sig",
+        "alg": "ES256"
+      }
+    ]
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEifQ.eyJhdWQiOiJjbGllbnQtYSIsImlzcyI6Imh0dHBzOi8vcHVic3ViLnRlc3QiLCJleHAiOjE3OTE4MDY3MDAsImlhdCI6MTc5MTgwNjQwMCwic3ViIjoiY2xpZW50LWEtbWVtYmVyX2NoYW5nZWQiLCJqdGkiOiJtLTEiLCJiZGgiOiJhLVFRaWJ3NDcwQjEyUUlkeEVzM1l1MEJXczdsaDRhLXlKc211aGNtWVRJIn0.l70WgRc-gUhFy3SalGuHIJsNY5sIW_ZqHQM5pV_jSTs",
+  "bodyBase64": "eyJzcGVjdmVyc2lvbiI6IjEuMCIsImlkIjoibS0xIiwidHlwZSI6Im1lbWJlcl9jaGFuZ2VkIiwiZGF0YSI6IntcIm5hbWVcIjpcIsOmw7jDpVwifSJ9",
+  "expected": {
+    "valid": false,
+    "reason": "invalid_signature"
+  }
+}

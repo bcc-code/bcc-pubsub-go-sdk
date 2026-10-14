@@ -1,0 +1,461 @@
+package pubsubsdk
+
+import (
+	"bytes"
+	"context"
+	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/big"
+	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// defaultFetchTimeout bounds a key set fetch, also when the caller's HTTPClient has no Timeout.
+const defaultFetchTimeout = 10 * time.Second
+
+// DeliveryTokenHeader is the header bcc-pubsub sends the signed delivery token in.
+const DeliveryTokenHeader = "X-PubSub-Token"
+
+// Issuers of delivery tokens: the public bcc-pubsub API URL of each environment. The keys are served at
+// {issuer}/.well-known/jwks.json.
+const (
+	DeliveryIssuerProd    = "https://pubsub.api.bcc.no"
+	DeliveryIssuerSandbox = "https://pubsub.api.sandbox.bcc.no"
+	DeliveryIssuerDev     = "https://pubsub.api.dev.bcc.no"
+)
+
+// DeliveryVerificationReason says why a push was rejected. The values are shared with the .NET and Node SDKs.
+type DeliveryVerificationReason string
+
+const (
+	ReasonMissingToken     DeliveryVerificationReason = "missing_token"
+	ReasonMalformed        DeliveryVerificationReason = "malformed"
+	ReasonInvalidSignature DeliveryVerificationReason = "invalid_signature"
+	ReasonUnknownKey       DeliveryVerificationReason = "unknown_key"
+	ReasonWrongIssuer      DeliveryVerificationReason = "wrong_issuer"
+	ReasonWrongAudience    DeliveryVerificationReason = "wrong_audience"
+	ReasonExpired          DeliveryVerificationReason = "expired"
+	ReasonNotYetValid      DeliveryVerificationReason = "not_yet_valid"
+	ReasonBodyMismatch     DeliveryVerificationReason = "body_mismatch"
+)
+
+// DeliveryVerificationError means the push was not sent by bcc-pubsub for this client and body. Answer 401.
+type DeliveryVerificationError struct {
+	Reason DeliveryVerificationReason
+}
+
+func (e *DeliveryVerificationError) Error() string {
+	return "delivery token rejected: " + string(e.Reason)
+}
+
+// ErrDeliveryKeysUnavailable means the issuer's key set could not be fetched. It says nothing about the token;
+// answer with a 5xx status so bcc-pubsub delivers the message again.
+var ErrDeliveryKeysUnavailable = errors.New("bcc-pubsub delivery keys unavailable")
+
+// DeliveryClaims are the claims of a verified delivery token.
+type DeliveryClaims struct {
+	// Subject is the subscription name, or "dispatch:{dispatchId}".
+	Subject string
+	// JwtID is the Pub/Sub message id or dispatch id. It is the same for retries of one message.
+	JwtID    string
+	IssuedAt time.Time
+}
+
+// DeliveryVerifierOptions configures a DeliveryVerifier.
+type DeliveryVerifierOptions struct {
+	// Issuer is the public bcc-pubsub API URL, for example DeliveryIssuerProd. Required.
+	Issuer string
+	// Audience is your own client id. Required.
+	Audience string
+	// ClockSkew allowed on exp and iat. Default 60 seconds.
+	ClockSkew time.Duration
+	// JWKSCacheDuration is how long a fetched key set is used. Default one hour.
+	JWKSCacheDuration time.Duration
+	// JWKSRefreshInterval is the minimum time between fetches caused by an unknown key id. Default one minute.
+	JWKSRefreshInterval time.Duration
+	// HTTPClient fetches the key set. Default: a client with a 10 second timeout.
+	HTTPClient *http.Client
+
+	now func() time.Time
+}
+
+// DeliveryVerifier checks the X-PubSub-Token header bcc-pubsub sends with every push: signed by bcc-pubsub,
+// issued for this client, not expired, and for exactly this body. Create one and reuse it; it caches the keys.
+type DeliveryVerifier struct {
+	opts   DeliveryVerifierOptions
+	issuer string
+	keys   *jwksCache
+}
+
+// NewDeliveryVerifier creates a verifier. It returns an error when Issuer or Audience is missing.
+func NewDeliveryVerifier(opts DeliveryVerifierOptions) (*DeliveryVerifier, error) {
+	if opts.Issuer == "" {
+		return nil, errors.New("pubsubsdk: DeliveryVerifierOptions.Issuer is required")
+	}
+	if opts.Audience == "" {
+		return nil, errors.New("pubsubsdk: DeliveryVerifierOptions.Audience (your client id) is required")
+	}
+	if opts.ClockSkew == 0 {
+		opts.ClockSkew = 60 * time.Second
+	}
+	if opts.JWKSCacheDuration == 0 {
+		opts.JWKSCacheDuration = time.Hour
+	}
+	if opts.JWKSRefreshInterval == 0 {
+		opts.JWKSRefreshInterval = time.Minute
+	}
+	if opts.HTTPClient == nil {
+		opts.HTTPClient = &http.Client{Timeout: defaultFetchTimeout}
+	}
+	if opts.now == nil {
+		opts.now = time.Now
+	}
+
+	issuer := strings.TrimRight(opts.Issuer, "/")
+	return &DeliveryVerifier{
+		opts:   opts,
+		issuer: issuer,
+		keys: &jwksCache{
+			url:       issuer + "/.well-known/jwks.json",
+			cacheFor:  opts.JWKSCacheDuration,
+			refreshes: opts.JWKSRefreshInterval,
+			client:    opts.HTTPClient,
+			timeout:   defaultFetchTimeout,
+			now:       opts.now,
+		},
+	}, nil
+}
+
+// Verify checks a token (the X-PubSub-Token header value, empty when missing) against the raw request body.
+// It returns a *DeliveryVerificationError when the push must be rejected (401), or an error wrapping
+// ErrDeliveryKeysUnavailable when the keys cannot be fetched (5xx).
+func (v *DeliveryVerifier) Verify(ctx context.Context, token string, body []byte) (*DeliveryClaims, error) {
+	if token == "" {
+		return nil, reject(ReasonMissingToken)
+	}
+
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil, reject(ReasonMalformed)
+	}
+	// Header and payload must be JSON objects; their members are typed only where they are used, so a claim of the
+	// wrong type gets the same reason as in the .NET and Node SDKs.
+	var header, payload map[string]json.RawMessage
+	if decodeSegment(parts[0], &header) != nil || decodeSegment(parts[1], &payload) != nil || header == nil || payload == nil {
+		return nil, reject(ReasonMalformed)
+	}
+
+	// Only ES256: rejects "none" and HMAC keyed with the public key before any key is looked up.
+	if alg, _ := textOf(header["alg"]); alg != "ES256" {
+		return nil, reject(ReasonInvalidSignature)
+	}
+	kid, _ := textOf(header["kid"])
+	if kid == "" {
+		return nil, reject(ReasonUnknownKey)
+	}
+
+	key, err := v.keys.find(ctx, kid)
+	if err != nil {
+		return nil, err
+	}
+	if key == nil {
+		return nil, reject(ReasonUnknownKey)
+	}
+
+	if !signedBy(key, parts) {
+		return nil, reject(ReasonInvalidSignature)
+	}
+
+	exp, expOK := numberOf(payload["exp"])
+	iat, iatOK := numberOf(payload["iat"])
+	bdh, _ := textOf(payload["bdh"])
+	sub, _ := textOf(payload["sub"])
+	jti, _ := textOf(payload["jti"])
+	if !expOK || !iatOK || bdh == "" || sub == "" || jti == "" {
+		return nil, reject(ReasonMalformed)
+	}
+	iss, _ := textOf(payload["iss"])
+	if strings.TrimRight(iss, "/") != v.issuer {
+		return nil, reject(ReasonWrongIssuer)
+	}
+	if !hasAudience(payload["aud"], v.opts.Audience) {
+		return nil, reject(ReasonWrongAudience)
+	}
+
+	now := v.opts.now()
+	expires := time.Unix(int64(exp), 0)
+	issuedAt := time.Unix(int64(iat), 0)
+	if now.After(expires.Add(v.opts.ClockSkew)) {
+		return nil, reject(ReasonExpired)
+	}
+	if issuedAt.After(now.Add(v.opts.ClockSkew)) {
+		return nil, reject(ReasonNotYetValid)
+	}
+
+	hash := sha256.Sum256(body)
+	if bdh != base64.RawURLEncoding.EncodeToString(hash[:]) {
+		return nil, reject(ReasonBodyMismatch)
+	}
+
+	return &DeliveryClaims{Subject: sub, JwtID: jti, IssuedAt: issuedAt}, nil
+}
+
+// RequireDelivery is net/http middleware that lets a push through only with a valid X-PubSub-Token. It reads the
+// body (up to maxBodyBytes; 0 means 30 MB), verifies it, and puts it back for next. A rejected push gets 401, an
+// unavailable key set 503, a body over the limit 413 and a body that cannot be read 400. The verified claims are in the request context (see DeliveryClaimsFrom).
+func RequireDelivery(verifier *DeliveryVerifier, maxBodyBytes int64, next http.Handler) http.Handler {
+	if maxBodyBytes <= 0 {
+		maxBodyBytes = 30 << 20
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get(DeliveryTokenHeader)
+		if token == "" {
+			// Decided from the headers, before the body is read.
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
+
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+			} else {
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			}
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
+		claims, err := verifier.Verify(r.Context(), token, body)
+		if err != nil {
+			var rejected *DeliveryVerificationError
+			if errors.As(err, &rejected) {
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			} else {
+				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+			}
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), deliveryClaimsKey{}, claims)))
+	})
+}
+
+type deliveryClaimsKey struct{}
+
+// DeliveryClaimsFrom returns the claims RequireDelivery verified for this request.
+func DeliveryClaimsFrom(ctx context.Context) (*DeliveryClaims, bool) {
+	claims, ok := ctx.Value(deliveryClaimsKey{}).(*DeliveryClaims)
+	return claims, ok
+}
+
+func reject(reason DeliveryVerificationReason) error {
+	return &DeliveryVerificationError{Reason: reason}
+}
+
+func decodeSegment(segment string, target any) error {
+	raw, err := base64.RawURLEncoding.DecodeString(segment)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, target)
+}
+
+// signedBy checks an ES256 signature: r || s, 32 bytes each, over "header.payload".
+func signedBy(key *ecdsa.PublicKey, parts []string) bool {
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(signature) != 64 {
+		return false
+	}
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	r := new(big.Int).SetBytes(signature[:32])
+	s := new(big.Int).SetBytes(signature[32:])
+	return ecdsa.Verify(key, digest[:], r, s)
+}
+
+// textOf returns the value of a JSON string member; ok is false when it is missing or not a string.
+func textOf(raw json.RawMessage) (value string, ok bool) {
+	if json.Unmarshal(raw, &value) != nil || string(bytes.TrimSpace(raw)) == "null" {
+		return "", false
+	}
+	return value, true
+}
+
+// numberOf returns the value of a JSON number member; ok is false when it is missing or not a number.
+func numberOf(raw json.RawMessage) (value float64, ok bool) {
+	if json.Unmarshal(raw, &value) != nil || string(bytes.TrimSpace(raw)) == "null" {
+		return 0, false
+	}
+	return value, true
+}
+
+func hasAudience(raw json.RawMessage, audience string) bool {
+	var single string
+	if json.Unmarshal(raw, &single) == nil {
+		return single == audience
+	}
+	var many []string
+	if json.Unmarshal(raw, &many) == nil {
+		for _, a := range many {
+			if a == audience {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// jwksCache holds the issuer's keys. It fetches again when the cache is older than cacheFor, or on an unknown key id
+// at most once per refreshes, however many requests ask at the same time.
+//
+// The key set is an immutable snapshot behind an atomic pointer, so a request that finds its key in a fresh cache
+// never waits for a fetch. Only a request that needs a fetch takes fetchMu; it looks at the snapshot again after
+// getting the lock, because the request that held it may just have fetched.
+type jwksCache struct {
+	url       string
+	cacheFor  time.Duration
+	refreshes time.Duration
+	client    *http.Client
+	timeout   time.Duration // bounds one fetch
+	now       func() time.Time
+
+	snapshot atomic.Pointer[jwksSnapshot]
+	fetchMu  sync.Mutex
+}
+
+type jwksSnapshot struct {
+	keys      map[string]*ecdsa.PublicKey // nil until a fetch has succeeded
+	fetchedAt time.Time                   // time of the last fetch attempt; zero when none has been made
+	lastErr   error
+}
+
+func (c *jwksCache) find(ctx context.Context, kid string) (*ecdsa.PublicKey, error) {
+	if key, done, err := c.resolve(c.snapshot.Load(), kid); done {
+		return key, err
+	}
+
+	// One lock around the fetch: requests that arrive meanwhile wait for it and then use its result.
+	c.fetchMu.Lock()
+	defer c.fetchMu.Unlock()
+
+	snap := c.snapshot.Load()
+	if key, done, err := c.resolve(snap, kid); done {
+		return key, err
+	}
+	if snap == nil {
+		snap = &jwksSnapshot{}
+	}
+
+	now := c.now()
+	// The fetch is shared by every request waiting for the key set, so it does not end when the request that
+	// started it is cancelled. Recording that failure would block the next fetch for refreshes (or cacheFor).
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.timeout)
+	defer cancel()
+	keys, err := c.fetch(fetchCtx)
+	next := &jwksSnapshot{keys: snap.keys, fetchedAt: now, lastErr: err}
+	if err == nil {
+		next.keys = keys
+	}
+	// On error the previous key set stays in use if there is one.
+	c.snapshot.Store(next)
+	return lookup(c.url, next, kid)
+}
+
+// resolve answers from snap when no fetch is needed: the key is cached and fresh, or the cache was filled (or tried)
+// less than refreshes ago, so an unknown key id does not cause another fetch. done is false when a fetch is needed.
+func (c *jwksCache) resolve(snap *jwksSnapshot, kid string) (key *ecdsa.PublicKey, done bool, err error) {
+	if snap == nil || snap.fetchedAt.IsZero() {
+		return nil, false, nil
+	}
+	age := c.now().Sub(snap.fetchedAt)
+	if k, ok := snap.keys[kid]; ok && age < c.cacheFor {
+		return k, true, nil
+	}
+	if age < c.refreshes {
+		key, err = lookup(c.url, snap, kid)
+		return key, true, err
+	}
+	return nil, false, nil
+}
+
+func lookup(url string, snap *jwksSnapshot, kid string) (*ecdsa.PublicKey, error) {
+	if snap.keys == nil {
+		if snap.lastErr == nil {
+			return nil, fmt.Errorf("%w: could not fetch %s", ErrDeliveryKeysUnavailable, url)
+		}
+		return nil, fmt.Errorf("%w: could not fetch %s: %w", ErrDeliveryKeysUnavailable, url, snap.lastErr)
+	}
+	key, ok := snap.keys[kid]
+	if !ok && snap.lastErr != nil {
+		// The key may be new (a rotation) and only missing because the refresh failed: retry later instead of rejecting.
+		return nil, fmt.Errorf("%w: could not refresh %s: %w", ErrDeliveryKeysUnavailable, url, snap.lastErr)
+	}
+	return key, nil
+}
+
+func (c *jwksCache) fetch(ctx context.Context) (map[string]*ecdsa.PublicKey, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	var set struct {
+		Keys []struct {
+			Kty string `json:"kty"`
+			Crv string `json:"crv"`
+			Kid string `json:"kid"`
+			X   string `json:"x"`
+			Y   string `json:"y"`
+		} `json:"keys"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&set); err != nil {
+		return nil, err
+	}
+
+	keys := make(map[string]*ecdsa.PublicKey)
+	for _, k := range set.Keys {
+		if k.Kty != "EC" || k.Crv != "P-256" || k.Kid == "" {
+			continue
+		}
+		if _, seen := keys[k.Kid]; seen {
+			continue
+		}
+		if key := parseP256(k.X, k.Y); key != nil {
+			keys[k.Kid] = key
+		}
+	}
+	return keys, nil
+}
+
+// parseP256 builds a public key from JWK coordinates, or returns nil when they are not a point on P-256.
+func parseP256(x, y string) *ecdsa.PublicKey {
+	xb, errX := base64.RawURLEncoding.DecodeString(x)
+	yb, errY := base64.RawURLEncoding.DecodeString(y)
+	if errX != nil || errY != nil || len(xb) != 32 || len(yb) != 32 {
+		return nil
+	}
+	// crypto/ecdh rejects points that are not on the curve.
+	if _, err := ecdh.P256().NewPublicKey(append(append([]byte{4}, xb...), yb...)); err != nil {
+		return nil
+	}
+	return &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(xb), Y: new(big.Int).SetBytes(yb)}
+}
